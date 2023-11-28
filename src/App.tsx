@@ -1,6 +1,7 @@
 import {
   Switch, Match, createSignal, Component, Suspense,
-  createResource, Show, For, useContext, ErrorBoundary, createEffect, createMemo, Setter, mapArray
+  createResource, Show, For, useContext, ErrorBoundary, createEffect,
+  createMemo, Setter, mapArray
 } from 'solid-js'
 
 import sqliteWasm from "wa-sqlite/dist/wa-sqlite-async.wasm?asset"
@@ -80,7 +81,10 @@ const PeopleView = () => {
   // people() is a signal for all the people in the table, ordered by order() and filtered by search()
   const [order, setOrder] = createSignal<'asc' | 'desc'>('asc')
   const [search, setSearch] = createSignal("")
-  const [people] = createLiveQuery(() => db.person.liveMany({ orderBy: { name: order() }, where: { name: { contains: search() } } }))
+  const [people] = createLiveQuery(() => db.person.liveMany({
+    orderBy: { name: order() },
+    where: { name: { contains: search() } }
+  }))
 
   // createEffect(() => console.log(people()))
 
@@ -108,7 +112,7 @@ const PeopleView = () => {
   createEffect(() => person() ? dialogRef?.showModal() : dialogRef?.close())
 
   return (
-    <div class="flex flex-col max-w-screen-sm gap-2 p- m-auto">
+    <div class="flex flex-col max-w-screen-sm gap-2 p-1 m-auto">
       <div class="flex justify-between text-sm">
         <div class="flex gap-2 w-48">
           <button onClick={newRow}>add</button>
@@ -144,17 +148,17 @@ const PeopleView = () => {
 }
 
 const PersonView: Component<{ id: string }> = (props) => {
+
   const { db } = useElectric()!
   const [person] = createLiveQuery(() => db.person.liveUnique({ where: { id: props.id } }))
   const [clubperson] = createLiveQuery(() => db.clubperson.liveMany({ where: { person_id: props.id } }))
   const [club] = createLiveQuery(() => db.club.liveMany())
-  createEffect(() => console.log(clubperson()))
-  createEffect(() => console.log(club()))
 
 
-  const isMember = (club_id:string) => clubperson()?.some(item => item.club_id === club_id)
 
-  const removeMembership = (club_id: string) => db.clubperson.deleteMany({ where: { club_id, person_id : props.id } })
+  const isMember = (club_id: string) => clubperson()?.some(item => item.club_id === club_id)
+
+  const removeMembership = (club_id: string) => db.clubperson.deleteMany({ where: { club_id, person_id: props.id } })
 
   const createMembership = (club_id: string) => db.clubperson.create({ data: { id: genUUID(), club_id, person_id: props.id } })
 
@@ -174,8 +178,11 @@ const PersonView: Component<{ id: string }> = (props) => {
                 <For each={club()}>
                   {item =>
                     <>
-                      <div>{item.name}</div> 
-                      <input class="justify-self-end" onClick={e => {e.preventDefault(); isMember(item.id) ? removeMembership(item.id) : createMembership(item.id)}} type="checkbox" checked={isMember(item.id)} />
+                      <div>{item.name}</div>
+                      <input class="justify-self-end" onClick={e => {
+                        e.preventDefault()
+                        isMember(item.id) ? removeMembership(item.id) : createMembership(item.id)
+                      }} type="checkbox" checked={isMember(item.id)} />
                     </>}
                 </For>
               </div>
