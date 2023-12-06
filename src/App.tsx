@@ -1,7 +1,7 @@
 import {
   Switch, Match, createSignal, Component, Suspense,
   createResource, Show, For, useContext, ErrorBoundary, createEffect,
-  createMemo, Setter, mapArray
+  createMemo, Setter, mapArray, createContext
 } from 'solid-js'
 
 import sqliteWasm from "wa-sqlite/dist/wa-sqlite-async.wasm?asset"
@@ -11,14 +11,11 @@ import { Electric, schema } from './generated/client'
 import { authToken } from './auth'
 import { genUUID } from 'electric-sql/util'
 
-import { createLiveQuery } from './lib/createLiveQuery'
-import { createElectricContext } from './lib/provider'
+import { createLiveQuery, createLiveStore } from './lib/createLiveQuery'
 import { generateRandomClub, generateRandomName, generateRandomValue } from './utils'
+import { createStore, reconcile } from 'solid-js/store'
 
-const ElectricContext = createElectricContext<Electric>()
-
-// this is different to the react bindings, for some reason useElectric would
-// always return undefined if exported from ./lib/provider 
+const ElectricContext = createContext<Electric>()
 export const useElectric = () => useContext(ElectricContext)
 
 
@@ -75,13 +72,13 @@ const ElectricApp = () => {
 
 
 const PeopleView = () => {
-  const { db } = useElectric()!
+  const { db, notifier } = useElectric()!
 
 
   // people() is a signal for all the people in the table, ordered by order() and filtered by search()
   const [order, setOrder] = createSignal<'asc' | 'desc'>('asc')
   const [search, setSearch] = createSignal("")
-  const [people] = createLiveQuery(() => db.person.liveMany({
+  let people = createLiveStore(notifier, () => db.person.liveMany({
     orderBy: { name: order() },
     where: { name: { contains: search() } }
   }))
@@ -89,7 +86,7 @@ const PeopleView = () => {
   // createEffect(() => console.log(people()))
 
   const [person, setPerson] = createSignal<string>("")
-  const [personResult] = createLiveQuery(() => db.person.liveFirst({ where: { id: person() } }))
+  const [personResult] = createLiveQuery(notifier, () => db.person.liveFirst({ where: { id: person() } }))
 
 
   const newRow = () => {
@@ -106,6 +103,8 @@ const PeopleView = () => {
     db.person.deleteMany()
   }
 
+  const change = () => db.person.findFirst().then(p => p && db.person.update({where:{id : p.id},data:{age:5}}))
+
   let inputRef: HTMLInputElement
   let dialogRef: HTMLDialogElement
 
@@ -117,6 +116,7 @@ const PeopleView = () => {
         <div class="flex gap-2 w-48">
           <button onClick={newRow}>add</button>
           <button onClick={clear}>clear</button>
+          <button onClick={change}>chnage</button>
         </div>
         <div class="flex gap-2 ">
           <button classList={{ 'underline': order() === 'asc' }} onClick={() => setOrder(() => 'asc')}>Ascending</button>
@@ -125,8 +125,8 @@ const PeopleView = () => {
         <input class="p-1 rounded" ref={inputRef!} type="text" placeholder="Search" onInput={() => setSearch(inputRef.value)}></input>
       </div>
       <ErrorBoundary fallback={() => <div>error!</div>}>
-        <Show when={people()}>
-          <For each={people()}>
+        <Show when={people.value}>
+          <For each={people.value}>
             {(item) =>
               <div class="flex justify-between rounded border p-1" onClick={() => setPerson(item.id)}>
                 <div class="" >{item.name}</div>
@@ -149,10 +149,10 @@ const PeopleView = () => {
 
 const PersonView: Component<{ id: string }> = (props) => {
 
-  const { db } = useElectric()!
-  const [person] = createLiveQuery(() => db.person.liveUnique({ where: { id: props.id } }))
-  const [clubperson] = createLiveQuery(() => db.clubperson.liveMany({ where: { person_id: props.id } }))
-  const [club] = createLiveQuery(() => db.club.liveMany())
+  const { db, notifier } = useElectric()!
+  const [person] = createLiveQuery(notifier, () => db.person.liveUnique({ where: { id: props.id } }))
+  const [clubperson] = createLiveQuery(notifier, () => db.clubperson.liveMany({ where: { person_id: props.id } }))
+  const [club] = createLiveQuery(notifier, () => db.club.liveMany())
 
 
 
@@ -196,8 +196,10 @@ const PersonView: Component<{ id: string }> = (props) => {
 }
 
 const ClubView = () => {
-  const { db } = useElectric()!
-  const [Clubs] = createLiveQuery(() => db.club.liveMany())
+  const { db, notifier } = useElectric()!
+  const [Clubs] = createLiveQuery(notifier, () => db.club.liveMany())
+  const query = db.club.liveMany()
+  const store = createLiveStore(notifier, () => query())
 
   const addClub = () => {
     db.club.create({
@@ -208,14 +210,25 @@ const ClubView = () => {
       }
     })
   }
+
+  const clearClubs = () => {
+    db.club.deleteMany()
+  }
+
+  const changeFirst = () => {
+    db.club.findFirst().then(c => c && db.club.update({where:{id:c.id},data:{age:5}}))
+  }
+
   return (
     <div class="flex flex-col gap-2 max-w-screen-sm m-auto">
-      <div>
+      <div class="flex gap-1">
         <button onClick={() => addClub()}>add</button>
+        <button onClick={() => clearClubs()}>clear</button>
+        <button onClick={() => changeFirst()}>change</button>
       </div>
       <ErrorBoundary fallback={err => err}>
-        <Show when={Clubs()}>
-          <For each={Clubs()} >
+        <Show when={store.value}>
+          <For each={store.value} >
             {item =>
               <div class="flex justify-between rounded border p-1" >
                 <div class="" >{item.name}</div>
@@ -225,7 +238,7 @@ const ClubView = () => {
           </For>
         </Show>
       </ErrorBoundary>
-    </div>
+    </div >
   )
 }
 

@@ -1,7 +1,8 @@
 import { createResource, createSignal, onCleanup, createEffect, useContext, Resource, Accessor, getOwner, runWithOwner } from 'solid-js'
-import { ElectricContext } from './provider'
 
 import { QualifiedTablename, hasIntersection } from 'electric-sql/util'
+import { Notifier } from 'electric-sql/notifiers'
+import { Store, StoreNode, createStore, reconcile } from 'solid-js/store'
 
 export interface LiveResultContext<T> {
   (): Promise<LiveResult<T>>
@@ -79,8 +80,7 @@ function errorResult<T>(error: unknown): ResultData<T> {
 // }
 
 
-export function createLiveQuery<T>(queryOrAccessor: Accessor<LiveResultContext<T>>): Accessor<T | undefined>[] {
-  const electric = useContext(ElectricContext)!
+export function createLiveQuery<T>(notifier: Notifier, queryOrAccessor: Accessor<LiveResultContext<T>>): Accessor<T | undefined>[] {
 
   const [result, setResult] = createSignal<T | undefined>(undefined)
 
@@ -94,19 +94,40 @@ export function createLiveQuery<T>(queryOrAccessor: Accessor<LiveResultContext<T
       setResult(() => r.result)
     })
 
-    const key = electric.notifier.subscribeToDataChanges(notification => {
+    const key = notifier.subscribeToDataChanges(notification => {
       if (tableNames) {
-        const changedTablenames = electric.notifier.alias(notification)
+        const changedTablenames = notifier.alias(notification)
         if (hasIntersection(tableNames, changedTablenames)) {
           query().then(r => setResult(() => r.result))
         }
       }
     })
 
-    onCleanup(() => electric.notifier.unsubscribeFromDataChanges(key))
+    onCleanup(() => notifier.unsubscribeFromDataChanges(key))
   })
 
   return [result, setResult]
 }
 
+export function createLiveStore<T>(notifier: Notifier, queryFn: () => LiveResultContext<T>): { value: T | undefined } {
 
+  const [state, setState] = createStore<{ value: T | undefined }>({ value: undefined })
+  let tableNames: QualifiedTablename[]
+
+  createEffect(() => {
+    const query = queryFn()
+    query().then(r => {
+      tableNames = r.tablenames
+      setState({ value: r.result })
+    })
+
+    const unsub = notifier.subscribeToDataChanges(n => {
+      if (hasIntersection(notifier.alias(n), tableNames)) {
+        query().then(r => setState(reconcile({ value: r.result })))
+      }
+    })
+
+    onCleanup(() => notifier.unsubscribeFromDataChanges(unsub))
+  })
+  return state
+}
