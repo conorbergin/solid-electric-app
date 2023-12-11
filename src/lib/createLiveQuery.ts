@@ -80,36 +80,58 @@ function errorResult<T>(error: unknown): ResultData<T> {
 // }
 
 
-export function createLiveQuery<T>(notifier: Notifier, queryOrAccessor: Accessor<LiveResultContext<T>>): Accessor<T | undefined>[] {
+// export function createDerivedQuery<T>(notifier: Notifier, queryOrAccessor: Accessor<LiveResultContext<T>>): Accessor<T | undefined>[] {
 
-  const [result, setResult] = createSignal<T | undefined>(undefined)
+//   const [result, setResult] = createSignal<T | undefined>(undefined)
 
-  let tableNames: QualifiedTablename[] | null = null
+//   let tableNames: QualifiedTablename[] | null = null
 
-  createEffect(() => {
-    tableNames = null
-    const query = queryOrAccessor()
-    query().then(r => {
-      tableNames = r.tablenames;
-      setResult(() => r.result)
-    })
+//   createEffect(() => {
+//     tableNames = null
+//     const query = queryOrAccessor()
+//     query().then(r => {
+//       tableNames = r.tablenames;
+//       setResult(() => r.result)
+//     })
 
-    const key = notifier.subscribeToDataChanges(notification => {
-      if (tableNames) {
-        const changedTablenames = notifier.alias(notification)
-        if (hasIntersection(tableNames, changedTablenames)) {
-          query().then(r => setResult(() => r.result))
-        }
-      }
-    })
+//     const key = notifier.subscribeToDataChanges(notification => {
+//       if (tableNames) {
+//         const changedTablenames = notifier.alias(notification)
+//         if (hasIntersection(tableNames, changedTablenames)) {
+//           query().then(r => setResult(() => r.result))
+//         }
+//       }
+//     })
 
-    onCleanup(() => notifier.unsubscribeFromDataChanges(key))
+//     onCleanup(() => notifier.unsubscribeFromDataChanges(key))
+//   })
+
+//   return [result, setResult]
+// }
+export function createLiveQuery<T>(notifier: Notifier, query: LiveResultContext<T>): { value: T | undefined } {
+
+  const [state, setState] = createStore<{ value: T | undefined }>({ value: undefined })
+  let tableNames: QualifiedTablename[]
+
+  query().then(r => {
+    tableNames = r.tablenames
+    setState({ value: r.result })
   })
 
-  return [result, setResult]
+  const unsub = notifier.subscribeToDataChanges(n => {
+    if (hasIntersection(notifier.alias(n), tableNames)) {
+      query().then(r => setState(reconcile({ value: r.result })))
+    }
+  })
+
+  onCleanup(() => notifier.unsubscribeFromDataChanges(unsub))
+
+  return state
 }
 
-export function createLiveStore<T>(notifier: Notifier, queryFn: () => LiveResultContext<T>): { value: T | undefined } {
+
+
+export function createDerivedQuery<T>(notifier: Notifier, queryFn: () => LiveResultContext<T>): { value: T | undefined } {
 
   const [state, setState] = createStore<{ value: T | undefined }>({ value: undefined })
   let tableNames: QualifiedTablename[]

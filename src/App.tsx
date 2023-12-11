@@ -11,9 +11,8 @@ import { Electric, schema } from './generated/client'
 import { authToken } from './auth'
 import { genUUID } from 'electric-sql/util'
 
-import { createLiveQuery, createLiveStore } from './lib/createLiveQuery'
+import { createDerivedQuery, createLiveQuery } from './lib/createLiveQuery'
 import { generateRandomClub, generateRandomName, generateRandomValue } from './utils'
-import { createStore, reconcile } from 'solid-js/store'
 
 const ElectricContext = createContext<Electric>()
 export const useElectric = () => useContext(ElectricContext)
@@ -78,7 +77,7 @@ const PeopleView = () => {
   // people() is a signal for all the people in the table, ordered by order() and filtered by search()
   const [order, setOrder] = createSignal<'asc' | 'desc'>('asc')
   const [search, setSearch] = createSignal("")
-  let people = createLiveStore(notifier, () => db.person.liveMany({
+  let people = createDerivedQuery(notifier, () => db.person.liveMany({
     orderBy: { name: order() },
     where: { name: { contains: search() } }
   }))
@@ -86,7 +85,6 @@ const PeopleView = () => {
   // createEffect(() => console.log(people()))
 
   const [person, setPerson] = createSignal<string>("")
-  const [personResult] = createLiveQuery(notifier, () => db.person.liveFirst({ where: { id: person() } }))
 
 
   const newRow = () => {
@@ -103,7 +101,7 @@ const PeopleView = () => {
     db.person.deleteMany()
   }
 
-  const change = () => db.person.findFirst().then(p => p && db.person.update({where:{id : p.id},data:{age:5}}))
+  const change = () => db.person.findFirst().then(p => p && db.person.update({ where: { id: p.id }, data: { age: 5 } }))
 
   let inputRef: HTMLInputElement
   let dialogRef: HTMLDialogElement
@@ -150,13 +148,13 @@ const PeopleView = () => {
 const PersonView: Component<{ id: string }> = (props) => {
 
   const { db, notifier } = useElectric()!
-  const [person] = createLiveQuery(notifier, () => db.person.liveUnique({ where: { id: props.id } }))
-  const [clubperson] = createLiveQuery(notifier, () => db.clubperson.liveMany({ where: { person_id: props.id } }))
-  const [club] = createLiveQuery(notifier, () => db.club.liveMany())
+  const person = createLiveQuery(notifier,db.person.liveUnique({ where: { id: props.id } }))
+  const clubperson = createDerivedQuery(notifier, () => db.clubperson.liveMany({ where: { person_id: props.id } }))
+  const club = createDerivedQuery(notifier, () => db.club.liveMany())
 
 
 
-  const isMember = (club_id: string) => clubperson()?.some(item => item.club_id === club_id)
+  const isMember = (club_id: string) => clubperson.value?.some(item => item.club_id === club_id)
 
   const removeMembership = (club_id: string) => db.clubperson.deleteMany({ where: { club_id, person_id: props.id } })
 
@@ -165,29 +163,26 @@ const PersonView: Component<{ id: string }> = (props) => {
   return (
     <div class="flex flex-col gap-2">
       <ErrorBoundary fallback={err => err}>
-        <Show when={person()}>
-          {p =>
-            <>
-              <div class="grid grid-cols-2">
-                <div>Name:</div>
-                <div>{p().name}</div>
-                <div>Age:</div>
-                <div>{p().age}</div>
-              </div>
-              <div class="border rounded p-2 grid grid-cols-[1fr_2rem]">
-                <For each={club()}>
-                  {item =>
-                    <>
-                      <div>{item.name}</div>
-                      <input class="justify-self-end" onClick={e => {
-                        e.preventDefault()
-                        isMember(item.id) ? removeMembership(item.id) : createMembership(item.id)
-                      }} type="checkbox" checked={isMember(item.id)} />
-                    </>}
-                </For>
-              </div>
-            </>
-          }
+        <Show when={person.value}>
+          <div class="grid grid-cols-2">
+            <div>Name:</div>
+            <div>{person.value!.name}</div>
+            <div>Age:</div>
+            <div>{person.value!.age}</div>
+          </div>
+          <div class="border rounded p-2 grid grid-cols-[1fr_2rem]">
+            <For each={club.value}>
+              {item =>
+                <>
+                  <div>{item.name}</div>
+                  <input class="justify-self-end" onClick={e => {
+                    e.preventDefault()
+                    isMember(item.id) ? removeMembership(item.id) : createMembership(item.id)
+                  }} type="checkbox" checked={isMember(item.id)} />
+                </>}
+            </For>
+          </div>
+
         </Show>
       </ErrorBoundary>
     </div>
@@ -197,9 +192,8 @@ const PersonView: Component<{ id: string }> = (props) => {
 
 const ClubView = () => {
   const { db, notifier } = useElectric()!
-  const [Clubs] = createLiveQuery(notifier, () => db.club.liveMany())
-  const query = db.club.liveMany()
-  const store = createLiveStore(notifier, () => query())
+
+  const store = createDerivedQuery(notifier, () => db.club.liveMany())
 
   const addClub = () => {
     db.club.create({
@@ -216,7 +210,7 @@ const ClubView = () => {
   }
 
   const changeFirst = () => {
-    db.club.findFirst().then(c => c && db.club.update({where:{id:c.id},data:{age:5}}))
+    db.club.findFirst().then(c => c && db.club.update({ where: { id: c.id }, data: { age: 5 } }))
   }
 
   return (
